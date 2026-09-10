@@ -1,0 +1,10 @@
+# Keep the build context small. .git is deliberately NOT ignored: the build
+# stamps the short commit into buildinfo via `git rev-parse`.
+.env
+data/
+docker/src/
+docs/
+assets/
+dist/
+*.exe
+*.bat
