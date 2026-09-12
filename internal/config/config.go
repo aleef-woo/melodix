@@ -72,6 +72,13 @@ type Config struct {
 	// channel will not use. On a slow or lossy link a cap is worth real money,
 	// because a reopened stream is re-fetched from the start.
 	MaxAudioBitrate int `env:"MAX_AUDIO_BITRATE" envDefault:"0"`
+	// YoutubeCookies points at a Netscape-format cookie file handed to yt-dlp.
+	// Empty (the default) means anonymous extraction, which plays everything that
+	// is not gated. A path is what reaches age-restricted videos, which YouTube
+	// refuses to anonymous clients on every parser this project has. The file is
+	// full account access, so use a throwaway Google account: YouTube bans for
+	// this, and the ban lands on whichever account exported the cookies.
+	YoutubeCookies string `env:"YOUTUBE_COOKIES"`
 
 	// Logging (applog / zerolog). LOG_FILE empty = stderr only (pretty console).
 	LogLevel      string `env:"LOG_LEVEL" envDefault:"info"`

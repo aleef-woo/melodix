@@ -7,6 +7,7 @@ import (
 	"github.com/keshon/melodix/internal/config"
 	"github.com/keshon/melodix/internal/storage"
 	"github.com/keshon/melodix/pkg/music/cache"
+	"github.com/keshon/melodix/pkg/music/parsers/ytdlp"
 	"github.com/keshon/melodix/pkg/music/parsers/ytnative"
 	"github.com/keshon/melodix/pkg/music/stream"
 	"github.com/rs/zerolog"
@@ -19,6 +20,7 @@ import (
 func Apply(cfg *config.Config, store *storage.Storage, log zerolog.Logger) error {
 	stream.SetBufferAhead(cfg.BufferAheadMs)
 	ytnative.SetMaxBitrate(cfg.MaxAudioBitrate)
+	ytdlp.SetCookiesPath(cfg.YoutubeCookies)
 	if !cfg.CacheEnabled {
 		// Say so out loud. A cache that is off writes nothing and logs nothing,
 		// which is indistinguishable from a cache that is broken — and the usual

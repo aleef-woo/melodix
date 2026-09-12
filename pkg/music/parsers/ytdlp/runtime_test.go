@@ -2,6 +2,8 @@ package ytdlp
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -14,14 +16,17 @@ func resetRuntimeDetection(t *testing.T, found map[string]bool) {
 	t.Helper()
 	// sync.Once carries a noCopy, so it is reset to a fresh zero value rather
 	// than saved and restored.
-	origLook, origOpts := lookPath, youtubeOpts
+	origLook, origOpts, origCookies := lookPath, youtubeOpts, cookiesPath
 	t.Cleanup(func() {
-		lookPath, youtubeOpts = origLook, origOpts
+		lookPath, youtubeOpts, cookiesPath = origLook, origOpts, origCookies
 		runtimeOnce = sync.Once{}
 	})
 
 	runtimeOnce = sync.Once{}
 	youtubeOpts = nil
+	// Cookies are off unless a case asks for them, so the order cases run in
+	// does not change what any of them assert.
+	SetCookiesPath("")
 	lookPath = func(name string) (string, error) {
 		if found[name] {
 			return "/usr/bin/" + name, nil
@@ -80,6 +85,72 @@ func TestYoutubeArgsDetectsOnce(t *testing.T) {
 	// deno misses, node hits: two lookups, once.
 	if calls != 2 {
 		t.Fatalf("lookPath called %d times, want the detection to happen once", calls)
+	}
+}
+
+// The age-gate case: a configured cookie file must reach yt-dlp, and must reach
+// it as a writable copy rather than as the configured path, which is typically
+// a read-only mount that yt-dlp cannot refresh in place.
+func TestYoutubeArgsUsesAWritableCookieCopy(t *testing.T) {
+	resetRuntimeDetection(t, map[string]bool{"node": true})
+
+	src := filepath.Join(t.TempDir(), "cookies.txt")
+	const body = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tvalue\n"
+	if err := os.WriteFile(src, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	SetCookiesPath(src)
+
+	got := youtubeArgs()
+	i := slices.Index(got, "--cookies")
+	if i < 0 {
+		t.Fatalf("args = %v, want --cookies", got)
+	}
+	dst := got[i+1]
+	if dst == src {
+		t.Fatal("yt-dlp was pointed at the configured path; it rewrites the jar in place and the mount is read-only")
+	}
+	copied, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("copy unreadable: %v", err)
+	}
+	if string(copied) != body {
+		t.Fatalf("copy = %q, want the source contents", copied)
+	}
+}
+
+// A bad path must degrade to anonymous extraction rather than break YouTube
+// entirely — everything that is not gated still plays.
+func TestYoutubeArgsSurvivesAnUnreadableCookieFile(t *testing.T) {
+	resetRuntimeDetection(t, map[string]bool{"node": true})
+	SetCookiesPath(filepath.Join(t.TempDir(), "absent.txt"))
+
+	got := youtubeArgs()
+	if slices.Contains(got, "--cookies") {
+		t.Fatalf("args = %v, want no --cookies for an unreadable file", got)
+	}
+	if !slices.Contains(got, "--js-runtimes") {
+		t.Fatalf("args = %v, want extraction to carry on anonymously", got)
+	}
+}
+
+// Cookies do not depend on the JS runtime probe: authentication is what reaches
+// a gated video, with or without a runtime to drive the embedded client.
+func TestCookiesApplyWithoutAJSRuntime(t *testing.T) {
+	resetRuntimeDetection(t, nil)
+
+	src := filepath.Join(t.TempDir(), "cookies.txt")
+	if err := os.WriteFile(src, []byte("# Netscape HTTP Cookie File\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	SetCookiesPath(src)
+
+	got := youtubeArgs()
+	if !slices.Contains(got, "--cookies") {
+		t.Fatalf("args = %v, want --cookies even with no runtime", got)
+	}
+	if slices.Contains(got, "--js-runtimes") {
+		t.Fatalf("args = %v, want no runtime flags when none is installed", got)
 	}
 }
 
